@@ -1,0 +1,28 @@
+{
+ "name": "3s",
+ "description": "Simple command-line encryption/decryption for files using triplesec",
+ "version": "0.0.1",
+ "directories": {
+  "lib": "./lib"
+ },
+ "main": "index.js",
+ "author": "Chris Coyne <ccoyne77@gmail.com>",
+ "bin": "./bin/3s",
+ "dependencies": {
+  "optimist":     "*",
+  "triplesec":    "*"
+ },
+ "devDependencies": {
+  "iced-coffee-script" : "*"
+ },
+ "repository": {
+  "type": "git",
+  "url": "http://github.com/malgorithms/3s"
+ },
+ "licenses": [
+  {
+   "type": "MIT",
+   "url": "http://github.com/malgorithms/3s/raw/master/LICENSE"
+  }
+ ]
+}
