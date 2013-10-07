@@ -10,6 +10,7 @@
  "bin": "./bin/3s",
  "dependencies": {
   "optimist":     "*",
+  "prompt":       "*",
   "triplesec":    "*"
  },
  "devDependencies": {

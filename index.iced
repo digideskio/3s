@@ -1,2 +1,1 @@
-exports.encrypt = require('./lib/lib3s').encrypt
-exports.decrypt = require('./lib/lib3s').decrypt
+exports['3s'] = "possible non-command line version coming soon."
