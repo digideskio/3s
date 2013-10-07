@@ -37,19 +37,19 @@ argv = _optimist.argv
 
   3s lock
 
-    3s lock foo.txt                                   # creates foo.txt.enc, deletes original
-    3s lock foo.txt --output bar.enc                  # creates bar.enc, still deletes original
+    3s lock foo.txt                                   # creates foo.txt.3s, deletes original
+    3s lock foo.txt --output bar.3s                   # creates bar.3s, still deletes original
     3s lock foo.txt --keep-original                   # doesn't delete original
-    3s lock foo.txt --keep-original --output bar.enc  # creates bar.enc, keeps original
+    3s lock foo.txt --keep-original --output bar.3s   # creates bar.3s, keeps original
     3s lock foo.txt --stdout                          # outputs foo.txt encrypted, keeps original
     3s lock foo.txt --passphrase 'eat a bag'          # doesn't ask for password
     3s lock --message 'hi there'                      # no file manipulation at all
-    3s lock --output bar.enc --message 'hi there'
+    3s lock --output bar.3s --message 'hi there'
   
   3s unlock
 
-    3s unlock foo.txt.enc                   # creates foo.txt, deletes original
-    3s unlock foo.txt.enc --output bar.txt 
+    3s unlock foo.txt.3s                   # creates foo.txt, deletes original
+    3s unlock foo.txt.3s --output bar.txt 
     etc.
 
 ###
@@ -86,13 +86,21 @@ go = (opts, cb) ->
     progress_hook:  (o) ->
   , defer err, buff
   if err and opts.action is "unlock"
-    exit_err "Error! Check passphrase.", true
+    exit_err "Error! Check passphrase or input.", true
   else if err
     exit_err "An unknown error occurred. Exiting.", true
   else
     enc = if opts.action is 'lock' then 'base64' else 'binary'
     if opts.stdout
       console.log buff.toString enc
+    if opts.output
+      await fs.writeFile opts.output, buffer, defer err
+      if err?
+        exit_err "Could not write #{opts.output}.", true
+      else if (not opts.k) and (opts.filename?)
+        await fs.unlink opts.filename defer err
+        if err?
+          exit_err "Failed to delete #{opts.filename}.", true
     cb()
 
 # ------------------------------------------------------------------
@@ -102,27 +110,49 @@ collect_user_input = (opts, cb) ->
   prompt.delimiter  = ""
   prompt.start()
   while not opts.passphrase
-    await prompt.get {
-      properties:
-        p1:
-          hidden:       true
-          description:  "   Enter a passphrase: "
-          type:         "string"
-          pattern:      /^.+$/
-        p2:
-          hidden:       true
-          description:  "Verify the passphrase: "
-          type:         "string"
-          pattern:      /^.+$/
-    }, defer err, x
+    if opts.action is "lock"
+      await prompt.get {
+        properties:
+          p1:
+            hidden:       true
+            description:  "   Enter a passphrase: "
+            type:         "string"
+            pattern:      /^.+$/
+          p2:
+            hidden:       true
+            description:  "Verify the passphrase: "
+            type:         "string"
+            pattern:      /^.+$/
+      }, defer err, x
+    else 
+      await prompt.get {
+        properties:
+          p1:
+            hidden:       true
+            description:  "   Enter your passphrase: "
+            type:         "string"
+            pattern:      /^.+$/
+      }, defer err, x
     if err
       exit_err "\nexiting...", true    
-    else if x.p1 isnt x.p2
+    else if (opts.action is "lock") and (x.p1 isnt x.p2)
       console.log "passwords didn't match"
     else if not x.p1.length
       console.log "password empty"
     else
       opts.passphrase = x.p1
+  cb()
+
+# ------------------------------------------------------------------
+
+auto_outfile = (opts, cb) -> 
+  if opts.action is "lock"
+    opts.output = opts.filename + ".3s"
+  else
+    if path.extname(opts.filename) is ".3s"
+      opts.output = opts.filename[-3...]
+    else
+      exit_err "Expected -o, -s, or filename ending with .3s", true
   cb()
 
 # ------------------------------------------------------------------
@@ -149,11 +179,17 @@ run = exports.run = ->
   if opts.filename and opts.message then exit_err "Not expecting both a filename (#{opts.filename}) and a message"
   if opts.filename
     await file_to_buffer opts.filename, defer opts.input_buffer
+    if (not opts.stdout) and (not opts.output)
+      await auto_outfile opts, defer()
   else
     enc = if opts.action is 'unlock' then 'base64' else 'binary'
     opts.input_buffer = new Buffer opts.message, enc
     if not opts.output
       opts.stdout = true
+  if opts.output?
+    await fs.exists opts.output defer exists
+    if exists
+      exit_err "Output file #{opts.output} exists."
   await collect_user_input opts, defer()
   opts.passphrase_buffer = new Buffer opts.passphrase
   cleanse opts
