@@ -85,10 +85,15 @@ go = (opts, cb) ->
     key:            opts.passphrase_buffer
     progress_hook:  (o) ->
   , defer err, buff
-  enc = if opts.action is 'lock' then 'base64' else 'binary'
-  if opts.stdout
-    console.log buff.toString enc
-  cb()
+  if err and opts.action is "unlock"
+    exit_err "Error! Check passphrase.", true
+  else if err
+    exit_err "An unknown error occurred. Exiting.", true
+  else
+    enc = if opts.action is 'lock' then 'base64' else 'binary'
+    if opts.stdout
+      console.log buff.toString enc
+    cb()
 
 # ------------------------------------------------------------------
 
