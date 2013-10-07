@@ -4,15 +4,16 @@ prompt      = require 'prompt'
 fs          = require 'fs'
 triplesec   = require 'triplesec'
 
-_optimist   = require('optimist').options('o',
-        alias:    'output'
-        describe: 'output file')
-  .options('p',
-        alias:    'passphrase'
-        describe: 'passphrase as a parameter (not interactive)')
+_optimist   = require('optimist').string('o')
+  .alias('o', 'output')
+  .describe('o', 'output file')
+  .string('p')
+  .alias('p', 'passphrase')
+  .describe('p','passphrase as a parameter (not interactive)')
   .options('m',
         alias:    'message'
         describe: 'plaintext or ciphertext as a parameter, not a source file')
+  .string('m')
   .boolean('k')
   .alias('k', 'keep-original')
   .describe('k', 'do not delete original file when outputting to file')
@@ -57,28 +58,39 @@ argv = _optimist.argv
 # ------------------------------------------------------------------
 
 exit_err = (txt, no_show_help) ->
-  console.log txt if txt
+  process.stdout.write "Error: #{txt}\n" if txt
   _optimist.showHelp() unless no_show_help
   process.exit 1
 
 # ------------------------------------------------------------------
 
-file_to_buffer = (fname, cb) ->
+file_to_buffer = (opts, cb) ->
+  fname = opts.filename
+
+  if opts.action is "lock"
+    read_enc = "binary"
+    buffer_enc = "binary"
+  else
+    read_enc = "utf8"
+    buffer_enc = "base64"
+
   await fs.stat fname, defer err, stats
   if err
-    exit_err "failed to stat file #{fname} (#{path.normalize fname})"
+    exit_err "failed to find file #{fname}", true
   else if stats.size > (m = constants.max_srcfile_bytes)
     exit_err "source file too large (#{stats.size}); max=#{m}"
   else if stats.isDirectory()
     exit_err "source file is a directory"
-  await fs.readFile fname, defer err, data
+  await fs.readFile fname, {encoding: read_enc}, defer err, data
   if err
     exit_err "failed to read file #{fname} (#{err})"
-  cb data
+  opts.input_buffer = new Buffer data, buffer_enc
+  cb()
 
 # ------------------------------------------------------------------
 
 go = (opts, cb) ->
+  #console.log opts
   fn = if opts.action is "lock" then triplesec.encrypt else triplesec.decrypt
   await fn
     data:           opts.input_buffer
@@ -86,21 +98,26 @@ go = (opts, cb) ->
     progress_hook:  (o) ->
   , defer err, buff
   if err and opts.action is "unlock"
-    exit_err "Error! Check passphrase or input.", true
+    exit_err "check passphrase or input.", true
   else if err
-    exit_err "An unknown error occurred. Exiting.", true
+    exit_err "an unknown error occurred. Exiting.", true
   else
-    enc = if opts.action is 'lock' then 'base64' else 'binary'
+    if opts.action is 'lock'
+      write_enc = 'utf8'
+      out       = buff.toString 'base64'
+    else
+      write_enc = 'utf8'
+      out       = buff
     if opts.stdout
-      console.log buff.toString enc
+      process.stdout.write out
     if opts.output
-      await fs.writeFile opts.output, buffer, defer err
+      await fs.writeFile opts.output, out, {encoding: write_enc}, defer err
       if err?
-        exit_err "Could not write #{opts.output}.", true
+        exit_err "could not write #{opts.output}.", true
       else if (not opts.k) and (opts.filename?)
-        await fs.unlink opts.filename defer err
+        await fs.unlink opts.filename, defer err
         if err?
-          exit_err "Failed to delete #{opts.filename}.", true
+          exit_err "failed to delete #{opts.filename}.", true
     cb()
 
 # ------------------------------------------------------------------
@@ -134,7 +151,7 @@ collect_user_input = (opts, cb) ->
             pattern:      /^.+$/
       }, defer err, x
     if err
-      exit_err "\nexiting...", true    
+      exit_err "user requested exit...", true    
     else if (opts.action is "lock") and (x.p1 isnt x.p2)
       console.log "passwords didn't match"
     else if not x.p1.length
@@ -150,9 +167,9 @@ auto_outfile = (opts, cb) ->
     opts.output = opts.filename + ".3s"
   else
     if path.extname(opts.filename) is ".3s"
-      opts.output = opts.filename[-3...]
+      opts.output = opts.filename[...-3]
     else
-      exit_err "Expected -o, -s, or filename ending with .3s", true
+      exit_err "expected -o, -s, or filename ending with .3s", true
   cb()
 
 # ------------------------------------------------------------------
@@ -172,13 +189,14 @@ run = exports.run = ->
   opts.action = args[0]
   if args.length >= 2
     opts.filename = args[1]
-  if argv.message?    then opts.message = argv.message
   if argv.stdout?     then opts.stdout  = argv.stdout
-  if argv.passphrase? then opts.passphrase = argv.passphrase
-  if not (opts.filename or opts.message) then exit_err "Expecting either a filename or a message"
-  if opts.filename and opts.message then exit_err "Not expecting both a filename (#{opts.filename}) and a message"
+  if (typeof argv.output) is 'string'    then opts.output = argv.output
+  if (typeof argv.message) is 'string'    then opts.message = argv.message
+  if (typeof argv.passphrase) is 'string' then opts.passphrase = argv.passphrase
+  if not (opts.filename or opts.message) then exit_err "expecting either a filename or a message"
+  if opts.filename and opts.message then exit_err "not expecting both a filename (#{opts.filename}) and a message"
   if opts.filename
-    await file_to_buffer opts.filename, defer opts.input_buffer
+    await file_to_buffer opts, defer()
     if (not opts.stdout) and (not opts.output)
       await auto_outfile opts, defer()
   else
@@ -187,9 +205,11 @@ run = exports.run = ->
     if not opts.output
       opts.stdout = true
   if opts.output?
-    await fs.exists opts.output defer exists
+    if opts.filename and (path.resolve(opts.filename) is path.resolve(opts.output))
+      exit_err "3s does not support outputting to input file", true
+    await fs.exists opts.output, defer exists
     if exists
-      exit_err "Output file #{opts.output} exists."
+      exit_err "output file #{opts.output} exists."
   await collect_user_input opts, defer()
   opts.passphrase_buffer = new Buffer opts.passphrase
   cleanse opts
