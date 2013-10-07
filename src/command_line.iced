@@ -15,7 +15,7 @@ _optimist   = require('optimist').string('o')
         describe: 'plaintext or ciphertext as a parameter, not a source file')
   .string('m')
   .boolean('k')
-  .alias('k', 'keep-original')
+  .alias('k', 'keep')
   .describe('k', 'do not delete original file when outputting to file')
   .boolean('s')
   .alias('s', 'stdout')
@@ -40,8 +40,8 @@ argv = _optimist.argv
 
     3s lock foo.txt                                   # creates foo.txt.3s, deletes original
     3s lock foo.txt --output bar.3s                   # creates bar.3s, still deletes original
-    3s lock foo.txt --keep-original                   # doesn't delete original
-    3s lock foo.txt --keep-original --output bar.3s   # creates bar.3s, keeps original
+    3s lock foo.txt --keep                            # doesn't delete original
+    3s lock foo.txt --keep --output bar.3s            # creates bar.3s, keeps original
     3s lock foo.txt --stdout                          # outputs foo.txt encrypted, keeps original
     3s lock foo.txt --passphrase 'eat a bag'          # doesn't ask for password
     3s lock --message 'hi there'                      # no file manipulation at all
@@ -114,7 +114,7 @@ go = (opts, cb) ->
       await fs.writeFile opts.output, out, {encoding: write_enc}, defer err
       if err?
         exit_err "could not write #{opts.output}.", true
-      else if (not opts.k) and (opts.filename?)
+      else if (not opts.keep) and (opts.filename?)
         await fs.unlink opts.filename, defer err
         if err?
           exit_err "failed to delete #{opts.filename}.", true
@@ -193,6 +193,7 @@ run = exports.run = ->
   if (typeof argv.output) is 'string'    then opts.output = argv.output
   if (typeof argv.message) is 'string'    then opts.message = argv.message
   if (typeof argv.passphrase) is 'string' then opts.passphrase = argv.passphrase
+  if argv.keep? then opts.keep = argv.keep
   if not (opts.filename or opts.message) then exit_err "expecting either a filename or a message"
   if opts.filename and opts.message then exit_err "not expecting both a filename (#{opts.filename}) and a message"
   if opts.filename
